@@ -4,9 +4,7 @@ import re
 import sys
 from pathlib import Path
 
-import torch
 from PIL import Image
-import moondream as md
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config
@@ -184,8 +182,14 @@ def processar_imagens_moondream():
     if contexto:
         print("[Moondream] Contexto do perito carregado (contexto_filtro.txt); respostas ligadas a ele ficam marcadas como não verificadas.")
 
-    print("[Moondream] Carregando modelo na VRAM...")
-    model = md.vl(local=True, model="moondream3.1-9B-A2B")
+    if config.usa_openai():
+        import cliente_openai
+        print(f"[Moondream] Backend OpenAI: imagens analisadas por {config.OPENAI_MODELO_VISAO}.")
+        model = cliente_openai.Visao()
+    else:
+        import moondream as md
+        print("[Moondream] Carregando modelo na VRAM...")
+        model = md.vl(local=True, model="moondream3.1-9B-A2B")
 
     resultado = []
     for caminho in imagens:
@@ -215,9 +219,11 @@ def processar_imagens_moondream():
     print(f"[Moondream] {len(resultado)} item(ns) salvos em {saida}")
 
     del model
-    gc.collect()
-    torch.cuda.empty_cache()
-    print("[Moondream] Modelo descarregado da VRAM.")
+    if not config.usa_openai():
+        import torch
+        gc.collect()
+        torch.cuda.empty_cache()
+        print("[Moondream] Modelo descarregado da VRAM.")
     return resultado
 
 

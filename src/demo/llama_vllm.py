@@ -7,10 +7,8 @@ import json
 import re
 import sys
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-
-import torch
-from vllm import LLM, SamplingParams
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config  # noqa: E402
@@ -341,7 +339,48 @@ def _slug(s):
     return _norm(s).replace(" ", "_")
 
 
-def _gerar_lote(llm, params, pedidos):
+def _gerador_vllm():
+    """Carrega o Llama na GPU. Devolve (gerar, liberar); gerar(conversas) -> lista de textos."""
+    import torch
+    from vllm import LLM, SamplingParams
+
+    print("[Llama] Carregando modelo na VRAM (vLLM)...")
+    llm = LLM(model="meta-llama/Llama-3.2-3B-Instruct", max_model_len=32768, gpu_memory_utilization=0.8)
+    params = SamplingParams(temperature=0.0, top_p=1.0, max_tokens=4096)
+
+    def gerar(conversas):
+        return [s.outputs[0].text for s in llm.chat(conversas, params)]
+
+    def liberar():
+        nonlocal llm
+        del llm
+        gc.collect()
+        try:
+            from vllm.distributed.parallel_state import destroy_distributed_environment, destroy_model_parallel
+            destroy_model_parallel()
+            destroy_distributed_environment()
+        except Exception:
+            pass
+        torch.cuda.empty_cache()
+        print("[Llama] Modelo descarregado.")
+
+    return gerar, liberar
+
+
+def _gerador_openai():
+    """Mesma interface de _gerador_vllm, chamando a API da OpenAI (sem GPU)."""
+    import cliente_openai
+
+    print(f"[Llama] Backend OpenAI: análise por {config.OPENAI_MODELO}.")
+
+    def gerar(conversas):
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            return list(ex.map(lambda c: cliente_openai.chat(c, json=True), conversas))
+
+    return gerar, lambda: None
+
+
+def _gerar_lote(gerar, pedidos):
     """Gera as respostas em lote. Se o JSON vier inválido, repete a pergunta apontando o erro."""
     conversas = [[{"role": "system", "content": s}, {"role": "user", "content": u}] for s, u in pedidos]
     resultados = [{} for _ in pedidos]
@@ -349,10 +388,9 @@ def _gerar_lote(llm, params, pedidos):
     for _ in range(2):
         if not pendentes:
             break
-        saidas = llm.chat([conversas[i] for i in pendentes], params)
+        saidas = gerar([conversas[i] for i in pendentes])
         novos = []
-        for i, saida in zip(pendentes, saidas):
-            texto = saida.outputs[0].text
+        for i, texto in zip(pendentes, saidas):
             resultados[i] = _extrair_json(texto)
             if isinstance(resultados[i], dict) and "raw_output" in resultados[i]:
                 conversas[i] += [{"role": "assistant", "content": texto},
@@ -544,13 +582,11 @@ def executar_analise_llama():
     evidencias = _texto_evidencias(audio, imagem, mensagens, csv_rel, geos, _contexto_externo() or "Nenhum")
     SISTEMA = "Você é um perito forense digital. Responda apenas JSON válido, em português."
 
-    print("[Llama] Carregando modelo na VRAM (vLLM)...")
-    llm = LLM(model="meta-llama/Llama-3.2-3B-Instruct", max_model_len=32768, gpu_memory_utilization=0.8)
-    sampling_params = SamplingParams(temperature=0.0, top_p=1.0, max_tokens=4096)
+    gerar, liberar = _gerador_openai() if config.usa_openai() else _gerador_vllm()
 
     try:
         print("[Llama] Etapas 1-2/5: entidades e linguagem codificada")
-        prop_ent, prop_cod = _gerar_lote(llm, sampling_params, [
+        prop_ent, prop_cod = _gerar_lote(gerar, [
             (SISTEMA, _prompt_entidades(evidencias)), (SISTEMA, _prompt_codificada(evidencias))])
         entidades, prov, desc_ent = _validar_entidades(prop_ent, trechos)
         alertas, desc_cod = _validar_alertas(prop_cod, trechos, entidades)
@@ -562,7 +598,7 @@ def executar_analise_llama():
         _debug("Linguagem codificada", alertas)
 
         print("[Llama] Etapa 3/5: eventos")
-        prop_evt, = _gerar_lote(llm, sampling_params, [(SISTEMA, _prompt_eventos(evidencias, entidades, alertas))])
+        prop_evt, = _gerar_lote(gerar, [(SISTEMA, _prompt_eventos(evidencias, entidades, alertas))])
         eventos, desc_evt = _validar_eventos(prop_evt, trechos, entidades)
         print(f"[Llama] Eventos: {len(eventos)} ancorados na evidência ({desc_evt} descartados)")
         _escrever_json({"eventos": eventos}, "events.json")
@@ -574,7 +610,7 @@ def executar_analise_llama():
             pedidos.append((SISTEMA, _prompt_rel_entidades(entidades, eventos)))
         if len(eventos) >= 2:
             pedidos.append((SISTEMA, _prompt_rel_eventos(eventos)))
-        resp = iter(_gerar_lote(llm, sampling_params, pedidos)) if pedidos else iter(())
+        resp = iter(_gerar_lote(gerar, pedidos)) if pedidos else iter(())
         prop_ee = next(resp) if len(entidades) >= 2 and eventos else {}
         prop_vv = next(resp) if len(eventos) >= 2 else {}
         relacoes = _validar_relacoes(prop_ee, prop_vv, entidades, eventos, prov)
@@ -598,7 +634,7 @@ def executar_analise_llama():
                 "relacoes_entre_entidades": relacoes["entity_entity_relationships"],
                 "relacoes_entre_eventos": relacoes["event_event_relationships"],
             }, ensure_ascii=False)[:MAX_CHARS_CONSOLIDADO]
-            relatorio, = _gerar_lote(llm, sampling_params, [(SISTEMA, _prompt_relatorio(resumo))])
+            relatorio, = _gerar_lote(gerar, [(SISTEMA, _prompt_relatorio(resumo))])
         else:
             relatorio = {"relatorio_forense": {
                 "resumo_executivo": "Não foram identificados eventos nem termos codificados sustentados pelas evidências analisadas.",
@@ -622,16 +658,7 @@ def executar_analise_llama():
         print(f"[Llama] Relatório formatado salvo em: {destino}")
         return relatorio
     finally:
-        del llm
-        gc.collect()
-        try:
-            from vllm.distributed.parallel_state import destroy_distributed_environment, destroy_model_parallel
-            destroy_model_parallel()
-            destroy_distributed_environment()
-        except Exception:
-            pass
-        torch.cuda.empty_cache()
-        print("[Llama] Modelo descarregado.")
+        liberar()
 
 
 if __name__ == "__main__":

@@ -9,12 +9,35 @@ a escolha do usuário aos módulos, que rodam em processos separados):
     MAIDAI_EVIDENCE_DIR  -> pasta das evidências
     MAIDAI_OUTPUT_IPED   -> pasta onde fica o Filelist exportado pelo IPED
     MAIDAI_FILELIST      -> caminho exato do Filelist.csv
+
+Backend dos modelos (MAIDAI_BACKEND):
+    local  -> Moondream, Whisper e Llama/vLLM na GPU (padrão)
+    openai -> API da OpenAI, sem GPU; precisa de OPENAI_API_KEY
+        MAIDAI_OPENAI_MODELO        -> análise forense (padrão gpt-6-luna)
+        MAIDAI_OPENAI_MODELO_VISAO  -> análise das imagens (padrão: o mesmo da análise)
+        MAIDAI_OPENAI_MODELO_AUDIO  -> transcrição (padrão whisper-1, único que devolve timestamps por trecho)
+As variáveis podem ficar num arquivo .env na raiz do projeto (nunca faça commit dele).
 """
 import os
 from pathlib import Path
 
 SRC_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = SRC_DIR.parents[1]
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(PROJECT_DIR / ".env")
+except ImportError:
+    pass
+
+BACKEND = os.environ.get("MAIDAI_BACKEND", "local").strip().lower()
+OPENAI_MODELO = os.environ.get("MAIDAI_OPENAI_MODELO") or "gpt-6-luna"
+OPENAI_MODELO_VISAO = os.environ.get("MAIDAI_OPENAI_MODELO_VISAO") or OPENAI_MODELO
+OPENAI_MODELO_AUDIO = os.environ.get("MAIDAI_OPENAI_MODELO_AUDIO") or "whisper-1"
+
+
+def usa_openai() -> bool:
+    return BACKEND == "openai"
 
 
 def evidence_dir_padrao() -> Path:

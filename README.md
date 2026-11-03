@@ -145,6 +145,27 @@ Then:
 
 Attention: with the default value (0) an error occurred. It worked with 4 threads on the author's notebook. If you still get the error, try a different value for your hardware.
 
+## Running without a GPU (OpenAI API)
+
+For a machine or VM without a GPU, the three stages can run on the OpenAI API: images and the forensic analysis go to `gpt-6-luna`, audio goes to `whisper-1`. Installation steps 2 to 7 above are not needed.
+
+```
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-api.txt
+cp .env.example .env    # set OPENAI_API_KEY in it
+python src/demo/main.py --no-gui
+```
+
+`.env` sets `MAIDAI_BACKEND=openai`. The models can be changed with `MAIDAI_OPENAI_MODELO`, `MAIDAI_OPENAI_MODELO_VISAO` and `MAIDAI_OPENAI_MODELO_AUDIO`, and `OPENAI_BASE_URL` points to another OpenAI-compatible server.
+
+Differences from the local mode:
+
+- The evidence (images, audio transcripts and messages) is sent to the API provider. Check that this is allowed for the case before using it.
+- Keep `whisper-1` for audio: it is the OpenAI transcription model that returns timestamps per segment. Each audio file must be at most 25 MB.
+- The API does not return per-word confidence, so `audio.json` has no `words`; the segment confidence comes from the average token probability.
+- If the model does not accept `temperature=0`, the pipeline uses the model's default temperature, and results may vary between runs.
+
 ## Running
 
 Quick test, no GPU and no models (fictitious data):
@@ -345,6 +366,27 @@ Depois:
 4. Vá em Configurações > Configurações de Ambiente > `N° de Threads (0 = default)` e aumente o valor conforme a sua máquina.
 
 Atenção: com o valor padrão (0) ocorreu erro. No notebook do autor funcionou com 4 threads. Se o erro continuar, teste outro valor para o seu hardware.
+
+## Execução sem GPU (API da OpenAI)
+
+Em máquina ou VM sem GPU, as três etapas podem rodar na API da OpenAI: imagens e análise forense vão para o `gpt-6-luna`, e o áudio vai para o `whisper-1`. Os passos 2 a 7 da instalação acima não são necessários.
+
+```
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-api.txt
+cp .env.example .env    # preencha OPENAI_API_KEY nele
+python src/demo/main.py --no-gui
+```
+
+O `.env` define `MAIDAI_BACKEND=openai`. Os modelos podem ser trocados com `MAIDAI_OPENAI_MODELO`, `MAIDAI_OPENAI_MODELO_VISAO` e `MAIDAI_OPENAI_MODELO_AUDIO`, e `OPENAI_BASE_URL` aponta para outro servidor compatível com a API da OpenAI.
+
+Diferenças em relação ao modo local:
+
+- As evidências (imagens, transcrições de áudio e mensagens) são enviadas ao provedor da API. Confirme que isso é permitido para o caso antes de usar.
+- Mantenha o `whisper-1` no áudio: é o modelo de transcrição da OpenAI que devolve timestamps por trecho. Cada áudio pode ter no máximo 25 MB.
+- A API não devolve confiança por palavra, então o `audio.json` não tem `words`; a confiança do trecho vem da probabilidade média dos tokens.
+- Se o modelo não aceitar `temperature=0`, a pipeline usa a temperatura padrão do modelo, e o resultado pode variar entre execuções.
 
 ## Execução
 

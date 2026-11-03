@@ -1,0 +1,9 @@
+# Dependências para rodar SEM GPU, com MAIDAI_BACKEND=openai (ver README).
+# Não instale requirements-local.txt nem o Whisper local nesse caso.
+openai==3.42.1
+pillow==13.0.0
+customtkinter==6.0.0
+pandas==3.0.6
+numpy==2.3.5
+python-dotenv==1.2.4
+backports.tarfile==1.2.0

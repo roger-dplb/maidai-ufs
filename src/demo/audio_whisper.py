@@ -24,9 +24,6 @@ import sys
 import unicodedata
 from pathlib import Path
 
-import torch
-import whisper_timestamped as whisper
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config  # noqa: E402
 from evidencias import REGEX_AUDIO, listar_arquivos  # noqa: E402
@@ -111,6 +108,7 @@ def _triagem(texto, conf, sem_fala, compressao):
 
 
 def _transcrever(model, audio):
+    import whisper_timestamped as whisper
     try:
         return whisper.transcribe(model, audio, **OPCOES_WHISPER)
     except TypeError as e:
@@ -162,19 +160,28 @@ def processar_audios_whisper():
         print("[Whisper] Nenhum áudio para processar.")
         return []
 
-    if shutil.which("ffmpeg") is None:
-        print("[Whisper] AVISO: ffmpeg não encontrado no PATH; .ogg/.mp3 podem falhar.")
-
-    print("[Whisper] Carregando modelo na VRAM...")
-    model = whisper.load_model("large-v3-turbo", device="cuda")
+    if config.usa_openai():
+        import cliente_openai
+        print(f"[Whisper] Backend OpenAI: transcrição por {config.OPENAI_MODELO_AUDIO} (limite de 25 MB por arquivo).")
+        model = None
+    else:
+        import torch
+        import whisper_timestamped as whisper
+        if shutil.which("ffmpeg") is None:
+            print("[Whisper] AVISO: ffmpeg não encontrado no PATH; .ogg/.mp3 podem falhar.")
+        print("[Whisper] Carregando modelo na VRAM...")
+        model = whisper.load_model("large-v3-turbo", device="cuda")
 
     resultado = []
     for caminho in audios:
         print(f"[Whisper] Transcrevendo: {caminho.name}")
         try:
-            audio = whisper.load_audio(str(caminho))
-            torch.manual_seed(0)  # o fallback de temperatura sorteia; semente fixa mantém o resultado repetível
-            res = _transcrever(model, audio)
+            if model is None:
+                res = cliente_openai.transcrever(caminho, PROMPT_INICIAL if USAR_PROMPT_INICIAL else None)
+            else:
+                audio = whisper.load_audio(str(caminho))
+                torch.manual_seed(0)  # o fallback de temperatura sorteia; semente fixa mantém o resultado repetível
+                res = _transcrever(model, audio)
             segmentos, descartados = _processar_segmentos(res)
 
             item = {
@@ -203,10 +210,11 @@ def processar_audios_whisper():
         json.dump(resultado, f, ensure_ascii=False, indent=4)
     print(f"[Whisper] {len(resultado)} item(ns) salvos em {saida}")
 
-    del model
-    gc.collect()
-    torch.cuda.empty_cache()
-    print("[Whisper] Modelo descarregado da VRAM.")
+    if model is not None:
+        del model
+        gc.collect()
+        torch.cuda.empty_cache()
+        print("[Whisper] Modelo descarregado da VRAM.")
     return resultado
 
 

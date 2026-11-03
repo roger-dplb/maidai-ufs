@@ -88,8 +88,13 @@ def executar_pipeline(evidence_dir, filelist=None, log=print):
     log(f"[Pipeline] Evidências: {evidence_dir}")
     log(f"[Pipeline] Filelist: {filelist} ({'ok' if filelist.is_file() else 'não encontrado — varredura da pasta'})")
 
-    etapas_visuais = [("ETAPA 1: IMAGENS (MOONDREAM)", "visual_moondream.py"),
-                      ("ETAPA 2: ÁUDIOS (WHISPER)", "audio_whisper.py")]
+    if config.usa_openai():
+        nomes = (config.OPENAI_MODELO_VISAO, config.OPENAI_MODELO_AUDIO, config.OPENAI_MODELO)
+        log("[Pipeline] Backend: API da OpenAI (sem GPU)")
+    else:
+        nomes = ("MOONDREAM", "WHISPER", "LLAMA 3.2 / vLLM")
+    etapas_visuais = [(f"ETAPA 1: IMAGENS ({nomes[0]})", "visual_moondream.py"),
+                      (f"ETAPA 2: ÁUDIOS ({nomes[1]})", "audio_whisper.py")]
     if config.PARALELO_MOONDREAM_WHISPER:
         threads = [threading.Thread(target=_rodar_etapa, args=(t, s, env, log)) for t, s in etapas_visuais]
         for t in threads:
@@ -104,7 +109,7 @@ def executar_pipeline(evidence_dir, filelist=None, log=print):
         log("[ERRO] Nenhuma saída de áudio/imagem; análise do Llama cancelada.")
         return False
 
-    _rodar_etapa("ETAPA 3: ANÁLISE FORENSE (LLAMA 3.2 / vLLM)", "llama_vllm.py", env, log)
+    _rodar_etapa(f"ETAPA 3: ANÁLISE FORENSE ({nomes[2]})", "llama_vllm.py", env, log)
     ok = (evidence_dir / "relatorio_forense_final.txt").is_file()
     log("=== PIPELINE CONCLUÍDA ===" if ok else "=== PIPELINE TERMINOU SEM RELATÓRIO ===")
     return ok
