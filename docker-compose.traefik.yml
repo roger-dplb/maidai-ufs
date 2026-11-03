@@ -1,0 +1,29 @@
+# Complemento do docker-compose.yml para servidor com Traefik (rede externa já criada):
+#   docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d --build
+services:
+  maidai-app:
+    ports: !reset []
+    networks:
+      - traefik
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-traefik}
+      # HTTPS
+      - traefik.http.routers.maidai-ufs.rule=Host(`${APP_DOMAIN}`)
+      - traefik.http.routers.maidai-ufs.entrypoints=${TRAEFIK_ENTRYPOINT_HTTPS:-websecure}
+      - traefik.http.routers.maidai-ufs.tls=true
+      - traefik.http.routers.maidai-ufs.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}
+      - traefik.http.routers.maidai-ufs.service=maidai-ufs
+      # HTTP -> HTTPS
+      - traefik.http.routers.maidai-ufs-http.rule=Host(`${APP_DOMAIN}`)
+      - traefik.http.routers.maidai-ufs-http.entrypoints=${TRAEFIK_ENTRYPOINT_HTTP:-web}
+      - traefik.http.routers.maidai-ufs-http.middlewares=maidai-ufs-redirect
+      - traefik.http.middlewares.maidai-ufs-redirect.redirectscheme.scheme=https
+      - traefik.http.middlewares.maidai-ufs-redirect.redirectscheme.permanent=true
+      # Service (Streamlit)
+      - traefik.http.services.maidai-ufs.loadbalancer.server.port=8501
+
+networks:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik}

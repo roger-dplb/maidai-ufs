@@ -161,6 +161,8 @@ python src/demo/main.py --no-gui
 
 Web interface (for a VM without a display): run `streamlit run src/demo/app_web.py --server.address 0.0.0.0 --server.port 8501`. Each analysis gets its own folder in `jobs/`. `deploy/maidai-web.service` keeps it running with systemd. The page has no login, so run it only on an internal network.
 
+With Docker: `docker compose up -d --build` publishes the page on port 8501 (`APP_PORT` changes it). On a server with Traefik, add the overlay: `docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d --build`, with `APP_DOMAIN` in `.env`.
+
 Differences from the local mode:
 
 - The evidence (images, audio transcripts and messages) is sent to the API provider. Check that this is allowed for the case before using it.
@@ -384,6 +386,8 @@ python src/demo/main.py --no-gui
 O `.env` define `MAIDAI_BACKEND=openai`. Os modelos podem ser trocados com `MAIDAI_OPENAI_MODELO`, `MAIDAI_OPENAI_MODELO_VISAO` e `MAIDAI_OPENAI_MODELO_AUDIO`, e `OPENAI_BASE_URL` aponta para outro servidor compatível com a API da OpenAI.
 
 Interface web (para VM sem tela): rode `streamlit run src/demo/app_web.py --server.address 0.0.0.0 --server.port 8501`. Cada análise ganha uma pasta própria em `jobs/`. O `deploy/maidai-web.service` mantém a interface rodando com o systemd. A página não tem login, então rode-a só em rede interna.
+
+Com Docker: `docker compose up -d --build` publica a página na porta 8501 (`APP_PORT` muda a porta). Em servidor com Traefik, acrescente o complemento: `docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d --build`, com `APP_DOMAIN` no `.env`.
 
 Diferenças em relação ao modo local:
 

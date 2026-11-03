@@ -1,0 +1,11 @@
+.git
+.env
+.venv
+**/__pycache__
+**/.ipynb_checkpoints
+data
+jobs
+notebooks
+experiments
+output_iped
+.playwright-mcp

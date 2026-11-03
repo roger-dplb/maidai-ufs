@@ -1,0 +1,17 @@
+# Sem Traefik (rede interna):      docker compose up -d --build   -> http://IP-DA-MAQUINA:8501
+# Com Traefik (HTTPS por domínio): docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d --build
+services:
+  maidai-app:
+    build: .
+    image: maidai-ufs:latest
+    container_name: maidai-ufs
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${APP_PORT:-8501}:8501"
+    volumes:
+      - jobs:/app/jobs
+
+volumes:
+  jobs:
