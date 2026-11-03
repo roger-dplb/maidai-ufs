@@ -1,0 +1,16 @@
+# Serviço da interface web. Instalação na VM (ajuste User e os caminhos se o repo não estiver em /opt/maidai-ufs):
+#   sudo cp deploy/maidai-web.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now maidai-web
+#   journalctl -u maidai-web -f      # logs
+[Unit]
+Description=maidai-ufs - interface web (Streamlit)
+After=network-online.target
+
+[Service]
+User=maidai
+WorkingDirectory=/opt/maidai-ufs
+ExecStart=/opt/maidai-ufs/.venv/bin/streamlit run src/demo/app_web.py --server.address 0.0.0.0 --server.port 8501
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
