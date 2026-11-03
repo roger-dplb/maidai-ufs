@@ -67,7 +67,7 @@ def executar_pipeline(evidence_dir, filelist=None, log=print):
         return mock_dados.executar_demo(pasta_saida(evidence_dir), log)
 
     evidence_dir = Path(evidence_dir).expanduser().resolve()
-    filelist = Path(filelist) if filelist else config.achar_filelist(evidence_dir)
+    filelist = Path(filelist) if filelist else config.achar_filelist(config.OUTPUT_IPED_DIR, evidence_dir)
     if not evidence_dir.is_dir():
         log(f"[ERRO] Pasta de evidências não encontrada: {evidence_dir}")
         return False

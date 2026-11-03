@@ -24,7 +24,7 @@ class App(ctk.CTk):
         self.geometry("1100x760")
 
         self.evidence_dir = str(evidence_dir or config.EVIDENCE_DIR)
-        self.filelist = str(filelist or config.achar_filelist(self.evidence_dir))
+        self.filelist = str(filelist or config.achar_filelist(config.OUTPUT_IPED_DIR, self.evidence_dir))
         self.csv_manual = filelist is not None
         self.searchapp = str(searchapp or "")
         self.fila = queue.Queue()
@@ -81,7 +81,7 @@ class App(ctk.CTk):
             self.evidence_dir = p
             self.lbl_dir.configure(text=p)
             if not self.csv_manual:
-                self.filelist = str(config.achar_filelist(p))
+                self.filelist = str(config.achar_filelist(config.OUTPUT_IPED_DIR, p))
                 self.lbl_csv.configure(text=self.filelist)
 
     # --- execução ---
