@@ -5,6 +5,7 @@ OPENAI_BASE_URL, se definida, aponta para outro servidor compatível com a API d
 """
 import base64
 import io
+import json
 import math
 import sys
 from pathlib import Path
@@ -67,6 +68,18 @@ class Visao:
         conteudo = [{"type": "text", "text": pergunta},
                     {"type": "image_url", "image_url": {"url": self._data_url(image), "detail": "high"}}]
         return {"answer": chat([{"role": "user", "content": conteudo}], modelo=self.modelo)}
+
+
+def traduzir(dados):
+    """Traduz para português os textos de um dict (mesmas chaves). Devolve {} se a resposta não for JSON."""
+    pedido = ("Traduza para o português do Brasil os valores de texto deste JSON. Mantenha as chaves, "
+              "nomes próprios, números, placas e textos entre aspas exatamente como estão. "
+              "Responda apenas com o JSON traduzido.\n" + json.dumps(dados, ensure_ascii=False))
+    try:
+        r = json.loads(chat([{"role": "user", "content": pedido}], json=True))
+    except json.JSONDecodeError:
+        return {}
+    return r if isinstance(r, dict) else {}
 
 
 def transcrever(caminho, prompt=None):

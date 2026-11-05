@@ -172,6 +172,23 @@ def _analisar(model, image, contexto, gps):
             "indicios": itens, "gps": gps, "revisar": bool(itens)}
 
 
+def _em_portugues(analise):
+    """Tradução só para exibição na interface web; a análise continua usando os campos em inglês."""
+    import cliente_openai
+    origem = {"descricao_cena": analise["descricao_cena"], "indicios": analise["indicios"]}
+    try:
+        t = cliente_openai.traduzir(origem)
+    except Exception as e:
+        print(f"[Moondream] Tradução para exibição falhou ({type(e).__name__}: {e}); mantendo o texto original.")
+        return {}
+    saida = {}
+    if isinstance(t.get("descricao_cena"), str):
+        saida["descricao_cena_pt"] = t["descricao_cena"]
+    if isinstance(t.get("indicios"), dict):
+        saida["indicios_pt"] = {k: str(v) for k, v in t["indicios"].items() if k in analise["indicios"]}
+    return saida
+
+
 def processar_imagens_moondream():
     imagens = listar_arquivos(REGEX_IMAGEM, "Moondream")
     if not imagens:
@@ -199,6 +216,8 @@ def processar_imagens_moondream():
                 gps = _gps_exif(bruta)
                 image = bruta.convert("RGB")
             analise = _analisar(model, image, contexto, gps)
+            if config.usa_openai():
+                analise.update(_em_portugues(analise))
             resultado.append({"name": caminho.name, "path": str(caminho), **analise})
             if analise["indicios"]:
                 print(f"[Moondream] {caminho.name}: itens para revisão manual: {', '.join(analise['indicios'])}")

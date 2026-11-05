@@ -94,9 +94,10 @@ def aba_fotos(pasta):
             if f.get("erro"):
                 st.warning("Não foi possível analisar esta imagem. Confira manualmente.")
                 continue
-            if f.get("descricao_cena"):
-                st.write(f["descricao_cena"])
-            for chave, texto in (f.get("indicios") or {}).items():
+            descricao = f.get("descricao_cena_pt") or f.get("descricao_cena")
+            if descricao:
+                st.write(descricao)
+            for chave, texto in (f.get("indicios_pt") or f.get("indicios") or {}).items():
                 st.warning(f"**Ponto de atenção — {ITENS_FOTO.get(chave, _rotulo(chave))}:** {texto}")
             if f.get("visible_text"):
                 st.markdown("**Texto na imagem:**")
