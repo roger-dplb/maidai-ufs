@@ -39,7 +39,7 @@ def renderizar_markdown(relatorio, consolidado, alertas):
 
     L += ["## 1. Resumo Executivo", ""]
     if "raw_output" in r:
-        L += ["(O modelo não devolveu JSON válido; saída bruta abaixo)", str(r["raw_output"])]
+        L += ["(Não foi possível organizar o resumo automaticamente; texto original abaixo)", str(r["raw_output"])]
     else:
         L.append(_txt(r.get("resumo_executivo") or r.get("resumo_geral")) or "Sem resumo gerado.")
     L.append("")

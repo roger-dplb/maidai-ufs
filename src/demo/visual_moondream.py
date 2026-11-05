@@ -168,7 +168,7 @@ def _analisar(model, image, contexto, gps):
     else:
         descricao = " ".join(x for x in (partes, base, gps_txt) if x)
 
-    return {"description": descricao, "visible_text": visible_text, "tipo_imagem": tipo,
+    return {"description": descricao, "descricao_cena": base, "visible_text": visible_text, "tipo_imagem": tipo,
             "indicios": itens, "gps": gps, "revisar": bool(itens)}
 
 
