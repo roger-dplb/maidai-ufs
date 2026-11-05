@@ -23,10 +23,12 @@ JOBS_DIR = config.PROJECT_DIR / "jobs"
 EXTENSOES = ["jpg", "jpeg", "png", "webp", "bmp", "gif", "heic", "tif", "tiff",
              "mp3", "wav", "ogg", "opus", "m4a", "aac", "amr", "flac", "wma", "txt", "csv"]
 
-# Marcadores das etapas no log da pipeline -> texto mostrado na tela
-ETAPAS = {"=== ETAPA 1": "Analisando as fotos...",
-          "=== ETAPA 2": "Transcrevendo os áudios...",
-          "=== ETAPA 3": "Cruzando as evidências e redigindo o relatório..."}
+# Marcadores das etapas no log da pipeline -> (título do quadro de progresso, item da lista)
+# Fotos e áudios podem rodar ao mesmo tempo, então dividem o mesmo título.
+ETAPAS = {"=== ETAPA 1": ("Analisando as fotos e os áudios...", "Analisando as fotos..."),
+          "=== ETAPA 2": ("Analisando as fotos e os áudios...", "Transcrevendo os áudios..."),
+          "=== ETAPA 3": ("Cruzando as evidências e redigindo o relatório...",
+                          "Cruzando as evidências e redigindo o relatório...")}
 TIPOS_FOTO = {"photo": "Foto", "screenshot": "Captura de tela", "document": "Documento", "other": "Outro"}
 ITENS_FOTO = {"weapon": "Arma", "drugs": "Drogas", "cash": "Dinheiro", "package": "Pacote ou caixa",
               "context": "Relacionado ao contexto informado"}
@@ -143,10 +145,10 @@ if enviar:
 
             def log(linha):
                 print(linha, flush=True)   # log técnico completo fica no terminal / docker logs
-                for marcador, texto in ETAPAS.items():
+                for marcador, (titulo, item) in ETAPAS.items():
                     if linha.startswith(marcador):
-                        status.update(label=texto)
-                        st.write(texto)
+                        status.update(label=titulo)
+                        st.write(item)
 
             try:
                 ok = pipeline.executar_pipeline(pasta, filelist, log=log)

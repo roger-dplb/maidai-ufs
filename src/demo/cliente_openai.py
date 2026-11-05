@@ -8,6 +8,7 @@ import io
 import json
 import math
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from openai import BadRequestError, OpenAI
@@ -19,6 +20,7 @@ MAX_TOKENS = 16384   # folga para modelos que gastam tokens de raciocínio antes
 
 _cliente = None
 _sem_temperatura = False
+_perguntas = ThreadPoolExecutor(max_workers=16)   # perguntas sobre imagens feitas em paralelo
 
 
 def cliente():
@@ -51,11 +53,13 @@ def chat(mensagens, modelo=None, json=False):
 
 
 class Visao:
-    """Mesma interface do modelo do Moondream (query(image, pergunta) -> {"answer": ...})."""
+    """Mesma interface do modelo do Moondream (query(image, pergunta) -> {"answer": ...}).
+    Use uma instância por imagem: as respostas antecipadas ficam guardadas por pergunta."""
 
     def __init__(self, modelo=None):
         self.modelo = modelo or config.OPENAI_MODELO_VISAO
         self._ultima = (None, None)   # a mesma imagem recebe várias perguntas: codifica uma vez só
+        self._pendentes = {}
 
     def _data_url(self, image):
         if self._ultima[0] is not image:
@@ -64,10 +68,21 @@ class Visao:
             self._ultima = (image, "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode())
         return self._ultima[1]
 
-    def query(self, image, pergunta):
+    def _perguntar(self, image, pergunta):
         conteudo = [{"type": "text", "text": pergunta},
                     {"type": "image_url", "image_url": {"url": self._data_url(image), "detail": "high"}}]
-        return {"answer": chat([{"role": "user", "content": conteudo}], modelo=self.modelo)}
+        return chat([{"role": "user", "content": conteudo}], modelo=self.modelo)
+
+    def antecipar(self, image, perguntas):
+        """Dispara as perguntas em paralelo; query() devolve a resposta já pedida."""
+        self._data_url(image)   # codifica antes, para as threads não disputarem o cache
+        for p in perguntas:
+            if p not in self._pendentes:
+                self._pendentes[p] = _perguntas.submit(self._perguntar, image, p)
+
+    def query(self, image, pergunta):
+        futuro = self._pendentes.pop(pergunta, None)
+        return {"answer": futuro.result() if futuro else self._perguntar(image, pergunta)}
 
 
 def traduzir(dados):

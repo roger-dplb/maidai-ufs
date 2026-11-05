@@ -6,6 +6,7 @@ cada módulo continua 100% independente.
 """
 import json
 import os
+import queue
 import shutil
 import subprocess
 import sys
@@ -60,6 +61,20 @@ def _rodar_etapa(titulo, script, env, log):
     return codigo == 0
 
 
+def _em_paralelo(etapas, env, log):
+    """Roda as etapas ao mesmo tempo. As linhas de log voltam pela thread que chamou, porque
+    interfaces como o Streamlit só aceitam atualização a partir dela."""
+    fila = queue.Queue()
+    threads = [threading.Thread(target=_rodar_etapa, args=(t, s, env, fila.put)) for t, s in etapas]
+    for t in threads:
+        t.start()
+    while any(t.is_alive() for t in threads) or not fila.empty():
+        try:
+            log(fila.get(timeout=0.2))
+        except queue.Empty:
+            pass
+
+
 def executar_pipeline(evidence_dir, filelist=None, log=print):
     """Roda Moondream -> Whisper -> Llama. Retorna True se o relatório final foi gerado."""
     if modo_demo():
@@ -95,12 +110,9 @@ def executar_pipeline(evidence_dir, filelist=None, log=print):
         nomes = ("MOONDREAM", "WHISPER", "LLAMA 3.2 / vLLM")
     etapas_visuais = [(f"ETAPA 1: IMAGENS ({nomes[0]})", "visual_moondream.py"),
                       (f"ETAPA 2: ÁUDIOS ({nomes[1]})", "audio_whisper.py")]
-    if config.PARALELO_MOONDREAM_WHISPER:
-        threads = [threading.Thread(target=_rodar_etapa, args=(t, s, env, log)) for t, s in etapas_visuais]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+    # sem GPU para disputar, o backend OpenAI sempre roda imagens e áudios juntos
+    if config.PARALELO_MOONDREAM_WHISPER or config.usa_openai():
+        _em_paralelo(etapas_visuais, env, log)
     else:
         for t, s in etapas_visuais:
             _rodar_etapa(t, s, env, log)

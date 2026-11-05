@@ -2,6 +2,7 @@ import gc
 import json
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from PIL import Image
@@ -13,6 +14,7 @@ from evidencias import REGEX_IMAGEM, listar_arquivos
 SEM_INDICIO = "No suspicious elements visible."
 PREFIXO_ITENS = "Items of interest reported by the model (unverified, check the image):"
 MAX_CONTEXTO = 1000
+FOTOS_EM_PARALELO = 4   # só no backend OpenAI; na GPU as imagens vão uma por vez
 
 PROMPT_TIPO = (
     "Classify this image. Answer with exactly ONE word from this list: photo, screenshot, document, other. "
@@ -136,7 +138,15 @@ def _gps_exif(img):
         return None
 
 
+def _antecipar(model, image, perguntas):
+    """No backend OpenAI, faz as perguntas independentes ao mesmo tempo. No Moondream não faz nada."""
+    if hasattr(model, "antecipar"):
+        model.antecipar(image, perguntas)
+
+
 def _analisar(model, image, contexto, gps):
+    prompt_contexto = _PROMPT_CONTEXTO.replace("{contexto}", contexto) if contexto else None
+    _antecipar(model, image, [PROMPT_TIPO, PROMPT_TEXTO] + ([prompt_contexto] if contexto else []))
     tipo = _tipo_imagem(_perguntar(model, image, PROMPT_TIPO))
     texto = _perguntar(model, image, PROMPT_TEXTO)
     visible_text = "" if _sem_texto(texto) else texto
@@ -146,6 +156,7 @@ def _analisar(model, image, contexto, gps):
         base = f"{_ROTULO_TIPO[tipo]}: {_perguntar(model, image, PROMPT_TELA)}"
         foto = False
     else:
+        _antecipar(model, image, [PROMPT_CENA, *PERGUNTAS_ITENS.values()])
         base = _perguntar(model, image, PROMPT_CENA)
         foto = True
         for chave, pergunta in PERGUNTAS_ITENS.items():
@@ -153,7 +164,7 @@ def _analisar(model, image, contexto, gps):
             if not _negativo(resposta):
                 itens[chave] = resposta
     if contexto:
-        resposta = _perguntar(model, image, _PROMPT_CONTEXTO.replace("{contexto}", contexto))
+        resposta = _perguntar(model, image, prompt_contexto)
         if not _negativo(resposta):
             itens["context"] = resposta
 
@@ -189,6 +200,30 @@ def _em_portugues(analise):
     return saida
 
 
+def _processar_imagem(model, caminho, contexto):
+    print(f"[Moondream] Analisando: {caminho.name}")
+    try:
+        with Image.open(caminho) as bruta:
+            gps = _gps_exif(bruta)
+            image = bruta.convert("RGB")
+        analise = _analisar(model, image, contexto, gps)
+        if config.usa_openai():
+            analise.update(_em_portugues(analise))
+        if analise["indicios"]:
+            print(f"[Moondream] {caminho.name}: itens para revisão manual: {', '.join(analise['indicios'])}")
+        if gps:
+            print(f"[Moondream] {caminho.name}: GPS no EXIF: {gps['latitude']}, {gps['longitude']}")
+        return {"name": caminho.name, "path": str(caminho), **analise}
+    except Exception as e:
+        print(f"[Moondream] Erro em {caminho.name}: {e}")
+        return {
+            "name": caminho.name, "path": str(caminho),
+            "description": f"Image could not be analyzed ({type(e).__name__}); review manually.",
+            "visible_text": "", "tipo_imagem": "desconhecido", "indicios": {}, "gps": None,
+            "revisar": True, "erro": f"{type(e).__name__}: {e}",
+        }
+
+
 def processar_imagens_moondream():
     imagens = listar_arquivos(REGEX_IMAGEM, "Moondream")
     if not imagens:
@@ -201,36 +236,20 @@ def processar_imagens_moondream():
 
     if config.usa_openai():
         import cliente_openai
-        print(f"[Moondream] Backend OpenAI: imagens analisadas por {config.OPENAI_MODELO_VISAO}.")
-        model = cliente_openai.Visao()
+        print(f"[Moondream] Backend OpenAI: imagens analisadas por {config.OPENAI_MODELO_VISAO}, "
+              f"até {FOTOS_EM_PARALELO} ao mesmo tempo.")
+        model = None
     else:
         import moondream as md
         print("[Moondream] Carregando modelo na VRAM...")
         model = md.vl(local=True, model="moondream3.1-9B-A2B")
 
-    resultado = []
-    for caminho in imagens:
-        print(f"[Moondream] Analisando: {caminho.name}")
-        try:
-            with Image.open(caminho) as bruta:
-                gps = _gps_exif(bruta)
-                image = bruta.convert("RGB")
-            analise = _analisar(model, image, contexto, gps)
-            if config.usa_openai():
-                analise.update(_em_portugues(analise))
-            resultado.append({"name": caminho.name, "path": str(caminho), **analise})
-            if analise["indicios"]:
-                print(f"[Moondream] {caminho.name}: itens para revisão manual: {', '.join(analise['indicios'])}")
-            if gps:
-                print(f"[Moondream] {caminho.name}: GPS no EXIF: {gps['latitude']}, {gps['longitude']}")
-        except Exception as e:
-            print(f"[Moondream] Erro em {caminho.name}: {e}")
-            resultado.append({
-                "name": caminho.name, "path": str(caminho),
-                "description": f"Image could not be analyzed ({type(e).__name__}); review manually.",
-                "visible_text": "", "tipo_imagem": "desconhecido", "indicios": {}, "gps": None,
-                "revisar": True, "erro": f"{type(e).__name__}: {e}",
-            })
+    if config.usa_openai():
+        # cada foto com seu próprio cliente: as respostas antecipadas não se misturam entre threads
+        with ThreadPoolExecutor(max_workers=FOTOS_EM_PARALELO) as ex:
+            resultado = list(ex.map(lambda c: _processar_imagem(cliente_openai.Visao(), c, contexto), imagens))
+    else:
+        resultado = [_processar_imagem(model, c, contexto) for c in imagens]
 
     saida = config.OUTPUT_DIR / "visual.json"
     with open(saida, "w", encoding="utf-8") as f:
